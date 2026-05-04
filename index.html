@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Live Chat + Leaderboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<!-- Socket.io client -->
+<script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --gold:#f0a030;--gold-bright:#ffd060;--gold-dark:#c87820;
+  --bg:#080503;--bg2:#0f0a04;--bg3:#1a0f06;
+  --border:#3d1f08;--text:#f0e0c0;--dim:#8b6030;
+}
+body{background:var(--bg3);font-family:'IM Fell English',serif;color:var(--text);padding:16px;display:grid;grid-template-columns:1fr 320px;gap:16px;min-height:100vh;}
+
+/* ===== LIVE CHAT BOARD ===== */
+.board-section{display:flex;flex-direction:column;gap:12px;}
+.board-outer{
+  position:relative;background:var(--bg);border-radius:3px;
+  flex:1;min-height:260px;display:flex;align-items:center;justify-content:center;
+  border:2px solid var(--border);
+}
+.board-svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+.board-inner{position:relative;z-index:2;text-align:center;padding:36px 50px;width:100%;}
+.board-title-text{font-family:'Cinzel',serif;font-size:20px;letter-spacing:6px;color:#fff;text-shadow:0 0 12px rgba(255,255,255,0.5);}
+.board-msg-wrap{animation:appear 0.5s ease;}
+@keyframes appear{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.board-msg{font-family:'IM Fell English',serif;font-size:18px;color:#fff;text-shadow:0 0 10px rgba(255,255,255,0.6);margin-bottom:10px;line-height:1.5;}
+.board-attr{display:flex;align-items:center;justify-content:center;gap:10px;color:var(--gold);font-style:italic;font-size:13px;}
+.board-attr::before,.board-attr::after{content:'';display:block;width:30px;height:1px;background:var(--gold);opacity:0.5;}
+.board-amount{font-family:'Cinzel',serif;font-size:13px;color:var(--gold-dark);margin-top:8px;letter-spacing:2px;}
+
+/* status dot */
+.status-bar{display:flex;align-items:center;gap:8px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:2px;color:var(--dim);}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#444;}
+.status-dot.connected{background:#22c55e;box-shadow:0 0 6px #22c55e;}
+.status-dot.disconnected{background:#ef4444;}
+
+/* ===== LEADERBOARD ===== */
+.leaderboard{background:var(--bg2);border:1.5px solid var(--border);border-radius:6px;padding:16px;display:flex;flex-direction:column;gap:10px;height:fit-content;}
+.lb-header{display:flex;align-items:center;justify-content:space-between;}
+.lb-title{font-family:'Cinzel',serif;font-size:13px;letter-spacing:3px;color:var(--gold-bright);}
+.lb-subtitle{font-size:11px;color:var(--dim);font-style:italic;}
+
+.lb-list{display:flex;flex-direction:column;gap:6px;}
+.lb-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 12px;background:var(--bg);border:1px solid var(--border);
+  border-radius:5px;animation:fadeIn 0.4s ease;transition:border-color 0.3s;
+}
+.lb-item.rank-1{border-color:#ffd700;box-shadow:0 0 10px rgba(255,215,0,0.15);}
+.lb-item.rank-2{border-color:#c0c0c0;box-shadow:0 0 6px rgba(192,192,192,0.1);}
+.lb-item.rank-3{border-color:#cd7f32;box-shadow:0 0 6px rgba(205,127,50,0.1);}
+@keyframes fadeIn{from{opacity:0;transform:translateX(6px);}to{opacity:1;transform:translateX(0);}}
+
+.lb-rank{
+  width:28px;height:28px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Cinzel',serif;font-size:12px;font-weight:900;
+  background:var(--bg2);color:var(--dim);border:1px solid var(--border);
+}
+.lb-item.rank-1 .lb-rank{background:#3a2a00;color:#ffd700;border-color:#ffd700;}
+.lb-item.rank-2 .lb-rank{background:#1a1a1a;color:#c0c0c0;border-color:#c0c0c0;}
+.lb-item.rank-3 .lb-rank{background:#2a1500;color:#cd7f32;border-color:#cd7f32;}
+
+.lb-avatar{
+  width:32px;height:32px;border-radius:50%;flex-shrink:0;
+  background:linear-gradient(135deg,var(--gold-dark),var(--gold));
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Cinzel',serif;font-size:12px;font-weight:700;color:#fff;
+}
+.lb-info{flex:1;min-width:0;}
+.lb-name{font-family:'Cinzel',serif;font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lb-count{font-size:10px;color:var(--dim);margin-top:1px;}
+.lb-total{font-family:'Cinzel',serif;font-size:13px;color:var(--gold);white-space:nowrap;}
+
+.lb-empty{text-align:center;padding:24px;color:var(--dim);font-style:italic;font-size:13px;}
+
+/* divider -->*/
+.divider{height:1px;background:var(--border);margin:4px 0;}
+
+/* alert overlay */
+.alert-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,0.87);
+  display:none;align-items:center;justify-content:center;z-index:100;
+}
+.alert-overlay.show{display:flex;}
+.alert-box{width:440px;background:var(--bg);position:relative;animation:alertIn 0.5s cubic-bezier(0.175,0.885,0.32,1.275);}
+@keyframes alertIn{from{opacity:0;transform:scale(0.82);}to{opacity:1;transform:scale(1);}}
+.alert-svg-wrap{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+.alert-content{position:relative;z-index:2;padding:30px 40px;text-align:center;}
+.alert-badge{display:inline-flex;align-items:center;gap:7px;background:#1a0800;border:1px solid var(--gold);border-radius:3px;padding:4px 12px;font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--gold);margin-bottom:14px;}
+.alert-dot{width:5px;height:5px;background:var(--gold);border-radius:50%;animation:blink 1s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:0;}}
+.alert-avatar{width:64px;height:64px;border-radius:50%;margin:0 auto 10px;background:linear-gradient(135deg,var(--gold-dark),var(--gold-bright));display:flex;align-items:center;justify-content:center;font-family:'Cinzel',serif;font-size:24px;font-weight:900;color:#fff;border:3px solid var(--gold-bright);box-shadow:0 0 22px rgba(255,208,96,0.5);}
+.alert-name{font-family:'Cinzel',serif;font-size:20px;letter-spacing:2px;color:var(--gold-bright);text-shadow:0 0 10px rgba(255,208,96,0.4);}
+.alert-amount{font-family:'Cinzel',serif;font-size:26px;color:var(--gold);text-shadow:0 0 14px rgba(240,160,48,0.5);margin:8px 0;}
+.alert-msg{font-size:14px;color:var(--text);font-style:italic;border-top:1px solid var(--border);padding-top:10px;margin-top:4px;line-height:1.6;}
+.alert-close{margin-top:14px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--dim);font-family:'Cinzel',serif;font-size:10px;letter-spacing:2px;padding:7px 18px;cursor:pointer;transition:all 0.15s;}
+.alert-close:hover{border-color:var(--gold);color:var(--gold);}
+</style>
+</head>
+<body>
+
+<!-- LIVE CHAT BOARD -->
+<div class="board-section">
+  <div class="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">MENGHUBUNGKAN...</span>
+  </div>
+
+  <div class="board-outer">
+    <svg class="board-svg" viewBox="0 0 560 260" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="bg"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="bs"><feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <radialGradient id="vg" cx="50%" cy="50%" r="65%"><stop offset="0%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity="0.6"/></radialGradient>
+        <pattern id="ch" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="20" y2="20" stroke="#1e1005" stroke-width="0.4" opacity="0.5"/><line x1="20" y1="0" x2="0" y2="20" stroke="#1e1005" stroke-width="0.4" opacity="0.5"/></pattern>
+      </defs>
+      <rect width="560" height="260" fill="url(#ch)"/><rect width="560" height="260" fill="url(#vg)"/>
+      <rect x="3" y="3" width="554" height="254" rx="4" fill="none" stroke="#ffd060" stroke-width="2" filter="url(#bg)" opacity="0.5"/>
+      <rect x="3" y="3" width="554" height="254" rx="4" fill="none" stroke="#ffe080" stroke-width="1.5"/>
+      <rect x="9" y="9" width="542" height="242" rx="3" fill="none" stroke="#c87820" stroke-width="0.8" opacity="0.5"/>
+      <path d="M3,65 L3,16 Q3,3 16,3 L65,3" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#bg)" opacity="0.6"/>
+      <path d="M3,65 L3,16 Q3,3 16,3 L65,3" fill="none" stroke="#ffe080" stroke-width="1.2"/>
+      <rect x="0" y="0" width="16" height="16" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.2"/>
+      <polygon points="8,2 14,8 8,14 2,8" fill="#c87820"/><polygon points="8,5 12,8 8,11 4,8" fill="#f0a030"/><circle cx="8" cy="8" r="2" fill="#ffd060" filter="url(#bs)"/>
+      <circle cx="65" cy="3" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <circle cx="3" cy="65" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <path d="M557,65 L557,16 Q557,3 544,3 L495,3" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#bg)" opacity="0.6"/>
+      <path d="M557,65 L557,16 Q557,3 544,3 L495,3" fill="none" stroke="#ffe080" stroke-width="1.2"/>
+      <rect x="544" y="0" width="16" height="16" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.2"/>
+      <polygon points="552,2 558,8 552,14 546,8" fill="#c87820"/><polygon points="552,5 556,8 552,11 548,8" fill="#f0a030"/><circle cx="552" cy="8" r="2" fill="#ffd060" filter="url(#bs)"/>
+      <circle cx="495" cy="3" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <circle cx="557" cy="65" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <path d="M3,195 L3,244 Q3,257 16,257 L65,257" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#bg)" opacity="0.6"/>
+      <path d="M3,195 L3,244 Q3,257 16,257 L65,257" fill="none" stroke="#ffe080" stroke-width="1.2"/>
+      <rect x="0" y="244" width="16" height="16" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.2"/>
+      <polygon points="8,246 14,252 8,258 2,252" fill="#c87820"/><polygon points="8,249 12,252 8,255 4,252" fill="#f0a030"/><circle cx="8" cy="252" r="2" fill="#ffd060" filter="url(#bs)"/>
+      <circle cx="65" cy="257" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <circle cx="3" cy="195" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <path d="M557,195 L557,244 Q557,257 544,257 L495,257" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#bg)" opacity="0.6"/>
+      <path d="M557,195 L557,244 Q557,257 544,257 L495,257" fill="none" stroke="#ffe080" stroke-width="1.2"/>
+      <rect x="544" y="244" width="16" height="16" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.2"/>
+      <polygon points="552,246 558,252 552,258 546,252" fill="#c87820"/><polygon points="552,249 556,252 552,255 548,252" fill="#f0a030"/><circle cx="552" cy="252" r="2" fill="#ffd060" filter="url(#bs)"/>
+      <circle cx="495" cy="257" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <circle cx="557" cy="195" r="2.5" fill="#f0a030" filter="url(#bs)"/>
+      <polygon points="280,0 292,8 280,16 268,8" fill="#1a0800" stroke="#ffd060" stroke-width="1.5" filter="url(#bg)"/>
+      <polygon points="280,3 289,8 280,13 271,8" fill="#c87820"/><circle cx="280" cy="8" r="3" fill="#ffd060" filter="url(#bs)"/>
+      <line x1="100" y1="3" x2="265" y2="3" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+      <line x1="295" y1="3" x2="460" y2="3" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+      <circle cx="100" cy="3" r="2.5" fill="#c87820"/><circle cx="460" cy="3" r="2.5" fill="#c87820"/>
+      <polygon points="280,260 292,252 280,244 268,252" fill="#1a0800" stroke="#ffd060" stroke-width="1.5" filter="url(#bg)"/>
+      <polygon points="280,257 289,252 280,247 271,252" fill="#c87820"/><circle cx="280" cy="252" r="3" fill="#ffd060" filter="url(#bs)"/>
+      <line x1="100" y1="257" x2="265" y2="257" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+      <line x1="295" y1="257" x2="460" y2="257" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+      <circle cx="100" cy="257" r="2.5" fill="#c87820"/><circle cx="460" cy="257" r="2.5" fill="#c87820"/>
+      <polygon points="0,125 10,130 0,135" fill="#f0a030" filter="url(#bg)"/><line x1="10" y1="130" x2="22" y2="130" stroke="#ffd060" stroke-width="1.2"/><circle cx="25" cy="130" r="3.5" fill="#1a0800" stroke="#ffd060" stroke-width="1.2"/><circle cx="25" cy="130" r="1.5" fill="#ffd060"/>
+      <polygon points="560,125 550,130 560,135" fill="#f0a030" filter="url(#bg)"/><line x1="538" y1="130" x2="550" y2="130" stroke="#ffd060" stroke-width="1.2"/><circle cx="535" cy="130" r="3.5" fill="#1a0800" stroke="#ffd060" stroke-width="1.2"/><circle cx="535" cy="130" r="1.5" fill="#ffd060"/>
+    </svg>
+    <div class="board-inner">
+      <div id="board-content"><div class="board-title-text">LIVE CHAT</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- LEADERBOARD -->
+<div class="leaderboard">
+  <div class="lb-header">
+    <div class="lb-title">LEADERBOARD</div>
+  </div>
+  <div class="lb-subtitle">Top donatur</div>
+  <div class="divider"></div>
+  <div class="lb-list" id="lb-list">
+    <div class="lb-empty" id="lb-empty">Belum ada donatur...</div>
+  </div>
+</div>
+
+<!-- ALERT OVERLAY -->
+<div class="alert-overlay" id="alert-overlay">
+  <div class="alert-box">
+    <svg class="alert-svg-wrap" viewBox="0 0 440 270" xmlns="http://www.w3.org/2000/svg">
+      <defs><filter id="ag"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="asg"><feGaussianBlur stdDeviation="1.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <rect x="3" y="3" width="434" height="264" rx="5" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#ag)" opacity="0.6"/>
+      <rect x="3" y="3" width="434" height="264" rx="5" fill="none" stroke="#ffe080" stroke-width="1.5"/>
+      <rect x="9" y="9" width="422" height="252" rx="3" fill="none" stroke="#c87820" stroke-width="0.8" opacity="0.5"/>
+      <path d="M3,62 L3,18 Q3,3 18,3 L62,3" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#ag)" opacity="0.7"/>
+      <path d="M3,62 L3,18 Q3,3 18,3 L62,3" fill="none" stroke="#ffe080" stroke-width="1.5"/>
+      <rect x="0" y="0" width="18" height="18" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.5"/>
+      <polygon points="9,2 17,9 9,16 1,9" fill="#c87820"/><polygon points="9,5 14,9 9,13 4,9" fill="#f0a030"/><circle cx="9" cy="9" r="2.5" fill="#ffd060" filter="url(#asg)"/>
+      <path d="M437,62 L437,18 Q437,3 422,3 L378,3" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#ag)" opacity="0.7"/>
+      <path d="M437,62 L437,18 Q437,3 422,3 L378,3" fill="none" stroke="#ffe080" stroke-width="1.5"/>
+      <rect x="422" y="0" width="18" height="18" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.5"/>
+      <polygon points="431,2 439,9 431,16 423,9" fill="#c87820"/><polygon points="431,5 436,9 431,13 426,9" fill="#f0a030"/><circle cx="431" cy="9" r="2.5" fill="#ffd060" filter="url(#asg)"/>
+      <path d="M3,208 L3,252 Q3,267 18,267 L62,267" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#ag)" opacity="0.7"/>
+      <path d="M3,208 L3,252 Q3,267 18,267 L62,267" fill="none" stroke="#ffe080" stroke-width="1.5"/>
+      <rect x="0" y="252" width="18" height="18" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.5"/>
+      <polygon points="9,254 17,261 9,268 1,261" fill="#c87820"/><polygon points="9,257 14,261 9,265 4,261" fill="#f0a030"/><circle cx="9" cy="261" r="2.5" fill="#ffd060" filter="url(#asg)"/>
+      <path d="M437,208 L437,252 Q437,267 422,267 L378,267" fill="none" stroke="#ffd060" stroke-width="2.5" filter="url(#ag)" opacity="0.7"/>
+      <path d="M437,208 L437,252 Q437,267 422,267 L378,267" fill="none" stroke="#ffe080" stroke-width="1.5"/>
+      <rect x="422" y="252" width="18" height="18" rx="2" fill="#1a0800" stroke="#ffd060" stroke-width="1.5"/>
+      <polygon points="431,254 439,261 431,268 423,261" fill="#c87820"/><polygon points="431,257 436,261 431,265 426,261" fill="#f0a030"/><circle cx="431" cy="261" r="2.5" fill="#ffd060" filter="url(#asg)"/>
+      <polygon points="220,0 234,10 220,20 206,10" fill="#1a0800" stroke="#ffd060" stroke-width="1.5" filter="url(#ag)"/>
+      <polygon points="220,4 231,10 220,16 209,10" fill="#c87820"/><circle cx="220" cy="10" r="3" fill="#ffd060" filter="url(#asg)"/>
+      <line x1="80" y1="3" x2="203" y2="3" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+      <line x1="237" y1="3" x2="360" y2="3" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+      <polygon points="220,270 234,260 220,250 206,260" fill="#1a0800" stroke="#ffd060" stroke-width="1.5" filter="url(#ag)"/>
+      <polygon points="220,266 231,260 220,254 209,260" fill="#c87820"/><circle cx="220" cy="260" r="3" fill="#ffd060" filter="url(#asg)"/>
+      <line x1="80" y1="267" x2="203" y2="267" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+      <line x1="237" y1="267" x2="360" y2="267" stroke="#ffd060" stroke-width="1" opacity="0.5"/>
+    </svg>
+    <div class="alert-content">
+      <div class="alert-badge"><div class="alert-dot"></div>DONASI MASUK</div>
+      <div class="alert-avatar" id="a-avatar">?</div>
+      <div class="alert-name" id="a-name">-</div>
+      <div class="alert-amount" id="a-amount">Rp0</div>
+      <div class="alert-msg" id="a-msg">-</div>
+      <button class="alert-close" onclick="closeAlert()">TUTUP</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================
+// GANTI URL INI dengan URL server kamu!
+// Contoh: 'https://saweria-server.railway.app'
+// =============================================
+const SERVER_URL = window.location.origin;
+
+const socket = io(SERVER_URL);
+const statusDot = document.getElementById('status-dot');
+const statusText = document.getElementById('status-text');
+
+socket.on('connect', () => {
+  statusDot.className = 'status-dot connected';
+  statusText.textContent = 'TERHUBUNG';
+});
+socket.on('disconnect', () => {
+  statusDot.className = 'status-dot disconnected';
+  statusText.textContent = 'TERPUTUS';
+});
+
+// Terima donasi baru
+socket.on('new_donation', (d) => {
+  updateBoard(d);
+  showAlert(d);
+});
+
+// Terima update leaderboard
+socket.on('leaderboard_update', (lb) => {
+  renderLeaderboard(lb);
+});
+
+function formatRp(n) { return 'Rp' + parseInt(n).toLocaleString('id-ID'); }
+function getInitials(n) { return n.trim().split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,2)||'?'; }
+
+function updateBoard(d) {
+  const board = document.getElementById('board-content');
+  board.innerHTML = `
+    <div class="board-msg-wrap">
+      <div class="board-msg">"${d.message}"</div>
+      <div class="board-attr">— ${d.name} (@${d.name.toLowerCase().replace(/\s/g,'')})</div>
+      <div class="board-amount">${formatRp(d.amount)}</div>
+    </div>`;
+}
+
+function renderLeaderboard(lb) {
+  const list = document.getElementById('lb-list');
+  document.getElementById('lb-empty').style.display = lb.length ? 'none' : 'block';
+  list.querySelectorAll('.lb-item').forEach(el => el.remove());
+
+  lb.forEach((item, i) => {
+    const rank = i + 1;
+    const el = document.createElement('div');
+    el.className = `lb-item${rank<=3?' rank-'+rank:''}`;
+    const medals = ['🥇','🥈','🥉'];
+    el.innerHTML = `
+      <div class="lb-rank">${rank <= 3 ? medals[rank-1] : rank}</div>
+      <div class="lb-avatar">${getInitials(item.name)}</div>
+      <div class="lb-info">
+        <div class="lb-name">${item.name}</div>
+        <div class="lb-count">${item.count}x donasi</div>
+      </div>
+      <div class="lb-total">${formatRp(item.total)}</div>`;
+    list.appendChild(el);
+  });
+}
+
+function showAlert(d) {
+  document.getElementById('a-avatar').textContent = getInitials(d.name);
+  document.getElementById('a-name').textContent = d.name;
+  document.getElementById('a-amount').textContent = formatRp(d.amount);
+  document.getElementById('a-msg').textContent = '"' + d.message + '"';
+  document.getElementById('alert-overlay').classList.add('show');
+}
+
+function closeAlert() {
+  document.getElementById('alert-overlay').classList.remove('show');
+}
+</script>
+</body>
+</html>
