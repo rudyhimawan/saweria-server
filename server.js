@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,19 +12,16 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
 
-// =============================================
-// SAWERIA WEBHOOK ENDPOINT
-// Di dashboard Saweria, set webhook URL ke:
-// https://your-server.com/webhook/saweria
-// =============================================
+// Serve static files - coba public/ dulu, kalau tidak ada serve dari root
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
+
+// Saweria webhook
 app.post('/webhook/saweria', (req, res) => {
   const data = req.body;
-  console.log('Donasi masuk dari Saweria:', data);
+  console.log('Donasi masuk:', data);
 
-  // Format data dari Saweria
-  // Field dari Saweria: donator_name, amount, message, created_at
   const donation = {
     id: Date.now(),
     name: data.donator_name || 'Anonymous',
@@ -32,26 +30,18 @@ app.post('/webhook/saweria', (req, res) => {
     time: data.created_at || new Date().toISOString()
   };
 
-  // Simpan ke history
   donationHistory.unshift(donation);
   if (donationHistory.length > 100) donationHistory.pop();
-
-  // Update leaderboard
   updateLeaderboard(donation);
 
-  // Kirim ke semua browser yang connect via WebSocket
   io.emit('new_donation', donation);
   io.emit('leaderboard_update', getLeaderboard());
 
   res.json({ status: 'ok' });
 });
 
-// =============================================
-// DATA STORAGE (in-memory, reset kalau server restart)
-// Kalau mau permanen, ganti pake database (SQLite/MongoDB)
-// =============================================
 let donationHistory = [];
-let leaderboardMap = {}; // { username: { name, total, count } }
+let leaderboardMap = {};
 
 function updateLeaderboard(donation) {
   const key = donation.name.toLowerCase();
@@ -68,18 +58,9 @@ function getLeaderboard() {
     .slice(0, 10);
 }
 
-// =============================================
-// API ENDPOINTS
-// =============================================
-app.get('/api/history', (req, res) => {
-  res.json(donationHistory);
-});
+app.get('/api/history', (req, res) => res.json(donationHistory));
+app.get('/api/leaderboard', (req, res) => res.json(getLeaderboard()));
 
-app.get('/api/leaderboard', (req, res) => {
-  res.json(getLeaderboard());
-});
-
-// Test endpoint — buat simulasi donasi tanpa Saweria
 app.post('/api/test-donation', (req, res) => {
   const { name, amount, message } = req.body;
   const donation = {
@@ -96,12 +77,8 @@ app.post('/api/test-donation', (req, res) => {
   res.json({ status: 'ok', donation });
 });
 
-// =============================================
-// WEBSOCKET
-// =============================================
 io.on('connection', (socket) => {
   console.log('Browser connect:', socket.id);
-  // Kirim data awal
   socket.emit('history', donationHistory);
   socket.emit('leaderboard_update', getLeaderboard());
   socket.on('disconnect', () => console.log('Browser disconnect:', socket.id));
@@ -109,5 +86,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`Server jalan di http://localhost:${PORT}`);
+  console.log(`Server jalan di port ${PORT}`);
 });
