@@ -168,38 +168,24 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// Test donation
-app.post('/api/test-donation', async (req, res) => {
+// Test donation - TIDAK masuk DB, TIDAK masuk leaderboard, TIDAK dikirim ke Roblox
+// Hanya untuk preview tampilan overlay/alert di browser saja
+app.post('/api/test-donation', (req, res) => {
   const amount = parseAmount(req.body.amount ?? 10000);
   const donation = {
+    id:      Date.now(),
     name:    (req.body.name    || 'TestUser').trim(),
     amount:  amount,
     message: (req.body.message || 'Test donasi!').trim(),
     time:    new Date().toISOString(),
+    is_test: true, // flag penanda ini cuma test
   };
 
-  try {
-    const dbId = await saveDonation(donation);
-    donation.id = Number(dbId);
+  // Emit hanya ke browser overlay (untuk preview), tidak ke Roblox
+  io.emit('test_donation', donation);
 
-    if (amount > 0) {
-      await upsertLeaderboard(donation.name, amount);
-    }
-
-    const [, leaderboard] = await Promise.all([
-      getHistoryFromDB(),
-      getLeaderboardFromDB(),
-    ]);
-
-    io.emit('new_donation', donation);
-    io.emit('leaderboard_update', leaderboard);
-
-    console.log(`[Test] ${donation.name} | Rp${donation.amount}`);
-    res.json({ status: 'ok', donation });
-  } catch (err) {
-    console.error('[Test] DB error:', err.message);
-    res.status(500).json({ status: 'error', message: err.message });
-  }
+  console.log(`[Test] PREVIEW ONLY - ${donation.name} | Rp${donation.amount}`);
+  res.json({ status: 'ok', donation });
 });
 
 // Clear semua data
