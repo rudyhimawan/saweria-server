@@ -89,7 +89,7 @@ async function upsertLeaderboard(name, amount) {
 async function getLeaderboardFromDB() {
   const res = await pool.query(
     `SELECT name, total, count FROM leaderboard
-     ORDER BY total DESC LIMIT 10`
+     ORDER BY total DESC LIMIT 50`
   );
   return res.rows;
 }
