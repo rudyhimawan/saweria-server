@@ -103,6 +103,20 @@ async function getHistoryFromDB() {
   return res.rows;
 }
 
+// Top donatur Saweria HARI INI (WIB), digroup per nama
+async function getSaweriaTodayFromDB() {
+  const res = await pool.query(
+    `SELECT name, SUM(amount)::bigint AS total
+     FROM donations
+     WHERE (created_at AT TIME ZONE 'Asia/Jakarta')::date
+         = (NOW()      AT TIME ZONE 'Asia/Jakarta')::date
+     GROUP BY name
+     ORDER BY total DESC
+     LIMIT 10`
+  );
+  return res.rows;
+}
+
 // =============================================
 // SAWERIA WEBHOOK
 // POST /webhook/saweria
@@ -164,6 +178,15 @@ app.get('/api/leaderboard', async (req, res) => {
     res.json(await getLeaderboardFromDB());
   } catch (err) {
     console.error('[Leaderboard] DB error:', err.message);
+    res.status(500).json([]);
+  }
+});
+
+app.get('/api/saweria/today', async (req, res) => {
+  try {
+    res.json(await getSaweriaTodayFromDB());
+  } catch (err) {
+    console.error('[SaweriaToday] DB error:', err.message);
     res.status(500).json([]);
   }
 });
